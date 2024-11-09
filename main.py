@@ -1,57 +1,73 @@
 import streamlit as st
 import pandas as pd
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from io import BytesIO
 import json
 
 # Fungsi untuk mengambil komentar dari YouTube menggunakan API
 def video_comments(api_key, video_id):
     replies = []
-    youtube = build('youtube', 'v3', developerKey=api_key)
-    video_response = youtube.commentThreads().list(part='snippet,replies', videoId=video_id).execute()
+    try:
+        # Membuat koneksi ke YouTube API
+        youtube = build('youtube', 'v3', developerKey=api_key)
+        video_response = youtube.commentThreads().list(part='snippet,replies', videoId=video_id).execute()
+        
+        # Loop untuk mengambil semua komentar
+        while video_response:
+            for item in video_response['items']:
+                published = item['snippet']['topLevelComment']['snippet']['publishedAt']
+                user = item['snippet']['topLevelComment']['snippet']['authorDisplayName']
+                comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
+                likeCount = item['snippet']['topLevelComment']['snippet']['likeCount']
+                replies.append([published, user, comment, likeCount])
 
-    while video_response:
-        for item in video_response['items']:
-            published = item['snippet']['topLevelComment']['snippet']['publishedAt']
-            user = item['snippet']['topLevelComment']['snippet']['authorDisplayName']
-            comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
-            likeCount = item['snippet']['topLevelComment']['snippet']['likeCount']
-            replies.append([published, user, comment, likeCount])
+                # Jika ada balasan komentar
+                replycount = item['snippet']['totalReplyCount']
+                if replycount > 0:
+                    for reply in item['replies']['comments']:
+                        published = reply['snippet']['publishedAt']
+                        user = reply['snippet']['authorDisplayName']
+                        repl = reply['snippet']['textDisplay']
+                        likeCount = reply['snippet']['likeCount']
+                        replies.append([published, user, repl, likeCount])
 
-            replycount = item['snippet']['totalReplyCount']
-            if replycount > 0:
-                for reply in item['replies']['comments']:
-                    published = reply['snippet']['publishedAt']
-                    user = reply['snippet']['authorDisplayName']
-                    repl = reply['snippet']['textDisplay']
-                    likeCount = reply['snippet']['likeCount']
-                    replies.append([published, user, repl, likeCount])
-
-        if 'nextPageToken' in video_response:
-            video_response = youtube.commentThreads().list(
-                part='snippet,replies',
-                pageToken=video_response['nextPageToken'],
-                videoId=video_id
-            ).execute()
-        else:
-            break
+            # Memeriksa halaman berikutnya
+            if 'nextPageToken' in video_response:
+                video_response = youtube.commentThreads().list(
+                    part='snippet,replies',
+                    pageToken=video_response['nextPageToken'],
+                    videoId=video_id
+                ).execute()
+            else:
+                break
+    except HttpError as e:
+        # Penanganan error dari Google API
+        error_message = json.loads(e.content).get('error', {}).get('message', 'Unknown error')
+        st.error(f"Gagal mengambil komentar: {error_message}. Pastikan API Key dan Video ID benar.")
+        return []
+    except Exception as e:
+        # Penanganan error lain
+        st.error(f"Terjadi kesalahan: {str(e)}")
+        return []
+    
     return replies
 
 # Streamlit App
 def show():
-    st.title("SCRAPING YOUTUBE FOR PKM GO SENTIMEN ANALISIS...")
+    st.title("SCRAPING YOUTUBE UNTUK PKM GO SENTIMEN ANALISIS...")
 
     # Input API Key dan Video ID
-    st.markdown(" Much def Belum memiliki? [Klik DiSini](https://developers.google.com/youtube/v3/getting-started) untuk mendapatkan API Key.")
+    st.markdown("Belum memiliki API Key? [Klik DiSini](https://developers.google.com/youtube/v3/getting-started) untuk mendapatkannya.")
     api_key = st.text_input("Masukkan API Key YouTube:")
     video_id = st.text_input("Masukkan Video ID YouTube, contoh [v=_vJBuzzmS**]:")
 
-    # Cek apakah tombol sudah ditekan
+    # Tombol untuk mulai scraping
     if st.button("Scrape Komentar"):
         if api_key and video_id:
             comments = video_comments(api_key, video_id)
             if comments:
-                # Simpan hasil di session state agar tetap ada
+                # Menyimpan hasil di session state agar tetap ada
                 st.session_state['comments'] = pd.DataFrame(comments, columns=['publishedAt', 'authorDisplayName', 'textDisplay', 'likeCount'])
                 st.write(st.session_state['comments'])
             else:
@@ -99,3 +115,4 @@ def show():
 
 if __name__ == "__main__":
     show()
+#bg
